@@ -23,10 +23,9 @@ try {
 
 // Zendesk API Configuration from environment variables
 const CONFIG = {
-  subdomain: process.env.ZENDESK_SUBDOMAIN || "districtsd",
+  subdomain: process.env.ZENDESK_SUBDOMAIN || "engagevic", // Engage Victoria subdomain
   email: process.env.ZENDESK_EMAIL,
   apiToken: process.env.ZENDESK_API_TOKEN,
-  helpCenterId: process.env.ZENDESK_HELP_CENTER_ID || "9305921909647", // Engage Victoria Help Center ID
   locale: process.env.ZENDESK_LOCALE || "en-au",
   siteName: process.env.ZENDESK_SITE_NAME || "Engage Victoria Knowledge",
 };
@@ -109,7 +108,7 @@ function stripHtml(html: string): string {
 // Fetch a specific article by ID from the Engage Victoria Help Center
 async function fetchArticle(articleId: string): Promise<string> {
   try {
-    const data = await zendeskApiRequest(`/help_center/help_centers/${CONFIG.helpCenterId}/articles/${articleId}.json`);
+    const data = await zendeskApiRequest(`/help_center/${CONFIG.locale}/articles/${articleId}.json`);
     const article: ZendeskArticle = data.article;
 
     const cleanBody = stripHtml(article.body);
@@ -123,7 +122,7 @@ async function fetchArticle(articleId: string): Promise<string> {
 // List all categories and sections for Engage Victoria Help Center
 async function listCategories(): Promise<string> {
   try {
-    const data = await zendeskApiRequest(`/help_center/help_centers/${CONFIG.helpCenterId}/categories.json`);
+    const data = await zendeskApiRequest(`/help_center/${CONFIG.locale}/categories.json`);
     const categories: ZendeskCategory[] = data.categories;
 
     if (categories.length === 0) {
@@ -142,7 +141,7 @@ async function listCategories(): Promise<string> {
 
       // Get sections for this category
       try {
-        const sectionData = await zendeskApiRequest(`/help_center/help_centers/${CONFIG.helpCenterId}/categories/${category.id}/sections.json`);
+        const sectionData = await zendeskApiRequest(`/help_center/${CONFIG.locale}/categories/${category.id}/sections.json`);
         const sections: ZendeskSection[] = sectionData.sections;
 
         if (sections.length > 0) {
@@ -171,7 +170,7 @@ async function listCategories(): Promise<string> {
 async function searchArticles(query: string): Promise<string> {
   try {
     const encodedQuery = encodeURIComponent(query);
-    const data = await zendeskApiRequest(`/help_center/help_centers/${CONFIG.helpCenterId}/articles/search.json?query=${encodedQuery}`);
+    const data = await zendeskApiRequest(`/help_center/articles/search.json?query=${encodedQuery}&locale=${CONFIG.locale}`);
     const results: ZendeskArticle[] = data.results;
 
     if (results.length === 0) {

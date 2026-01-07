@@ -6,10 +6,9 @@ services:
     container_name: engage-victoria-mcp
     restart: unless-stopped
     environment:
-      - ZENDESK_SUBDOMAIN=districtsd
+      - ZENDESK_SUBDOMAIN=engagevic
       - ZENDESK_EMAIL=${ZENDESK_EMAIL}
       - ZENDESK_API_TOKEN=${ZENDESK_API_TOKEN}
-      - ZENDESK_HELP_CENTER_ID=9305921909647
       - ZENDESK_LOCALE=en-au
       - ZENDESK_SITE_NAME=Engage Victoria Knowledge
     stdin_open: true
