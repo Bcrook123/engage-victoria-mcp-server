@@ -11,14 +11,20 @@ import {
 import fetch from "node-fetch";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
+import { existsSync } from "fs";
 
-// Load .env file from the package root
+// Load .env file from the package root (only if running locally, not in Docker)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-try {
-  config({ path: resolve(__dirname, "../.env") });
-} catch (error) {
-  // Silently ignore dotenv parsing errors - env vars will still load
+const envPath = resolve(__dirname, "../.env");
+
+// Only load .env if it exists (it won't in Docker container)
+if (existsSync(envPath)) {
+  try {
+    config({ path: envPath });
+  } catch (error) {
+    // Silently ignore dotenv parsing errors - env vars will still load
+  }
 }
 
 // Zendesk API Configuration from environment variables
