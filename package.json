@@ -1,0 +1,32 @@
+{
+  "name": "engage-victoria-knowledge",
+  "version": "1.0.0",
+  "description": "MCP server for accessing Engage Victoria Help Center with always up-to-date information",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "engage-victoria-knowledge": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "watch": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "engage-victoria",
+    "zendesk"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "dotenv": "^17.2.3",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
