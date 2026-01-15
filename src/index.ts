@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { config } from "dotenv";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -9,89 +8,45 @@ import {
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
-import { fileURLToPath } from "url";
-import { dirname, resolve } from "path";
-import { existsSync } from "fs";
 
-// Load .env file from the package root (only if running locally, not in Docker)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-const envPath = resolve(__dirname, "../.env");
-
-// Only load .env if it exists (it won't in Docker container)
-if (existsSync(envPath)) {
-  try {
-    config({ path: envPath });
-  } catch (error) {
-    // Silently ignore dotenv parsing errors - env vars will still load
-  }
-}
-
-// Zendesk API Configuration from environment variables
+// API Configuration from environment variables
 const CONFIG = {
-  subdomain: process.env.ZENDESK_SUBDOMAIN || "engagevic", // Engage Victoria subdomain
-  email: process.env.ZENDESK_EMAIL,
-  apiToken: process.env.ZENDESK_API_TOKEN,
-  locale: process.env.ZENDESK_LOCALE || "en-au",
-  siteName: process.env.ZENDESK_SITE_NAME || "Engage Victoria Knowledge",
+  apiBase: process.env.KB_API_URL || "https://ev-kb.doghouse.cloud",
+  siteName: process.env.KB_SITE_NAME || "Engage Victoria Knowledge",
 };
 
-// Validate required configuration
-if (!CONFIG.email || !CONFIG.apiToken) {
-  console.error("Error: Missing required environment variables");
-  console.error("Please set ZENDESK_EMAIL and ZENDESK_API_TOKEN");
-  process.exit(1);
-}
-
-// Zendesk API base URL
-const ZENDESK_API_BASE = `https://${CONFIG.subdomain}.zendesk.com/api/v2`;
-
-// Create Basic Auth header
-const authHeader = `Basic ${Buffer.from(`${CONFIG.email}/token:${CONFIG.apiToken}`).toString('base64')}`;
-
 interface FetchArticleArgs {
-  article_id: string;
+  article_slug: string;
 }
 
 interface SearchContentArgs {
   query: string;
 }
 
-interface ZendeskArticle {
+interface Article {
   id: number;
   title: string;
+  summary: string;
+  slug: string;
   body: string;
-  html_url: string;
-  section_id: number;
-  author_id: number;
 }
 
-interface ZendeskSection {
-  id: number;
-  name: string;
-  description: string;
-  category_id: number;
-  html_url: string;
+interface ApiResponse {
+  data: Article[];
 }
 
-interface ZendeskCategory {
-  id: number;
-  name: string;
-  description: string;
-  html_url: string;
-}
-
-// Helper function to make Zendesk API requests
-async function zendeskApiRequest(endpoint: string): Promise<any> {
-  const response = await fetch(`${ZENDESK_API_BASE}${endpoint}`, {
+// Helper function to make API requests
+async function apiRequest(endpoint: string): Promise<any> {
+  const url = `${CONFIG.apiBase}${endpoint}`;
+  const response = await fetch(url, {
     headers: {
-      "Authorization": authHeader,
+      "Accept": "application/json",
       "Content-Type": "application/json",
     },
   });
 
   if (!response.ok) {
-    throw new Error(`Zendesk API error: ${response.status} ${response.statusText}`);
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
   }
 
   return await response.json();
@@ -99,6 +54,7 @@ async function zendeskApiRequest(endpoint: string): Promise<any> {
 
 // Strip HTML tags from article body
 function stripHtml(html: string): string {
+  if (!html) return '';
   return html
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')
@@ -111,86 +67,76 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-// Fetch a specific article by ID from the Engage Victoria Help Center
-async function fetchArticle(articleId: string): Promise<string> {
+// Fetch a specific article by slug
+async function fetchArticle(articleSlug: string): Promise<string> {
   try {
-    const data = await zendeskApiRequest(`/help_center/${CONFIG.locale}/articles/${articleId}.json`);
-    const article: ZendeskArticle = data.article;
+    const data = await apiRequest(`/articles/${articleSlug}`);
+
+    // Handle both single article response and array response
+    const article: Article = data.data ? (Array.isArray(data.data) ? data.data[0] : data.data) : data;
+
+    if (!article) {
+      throw new Error(`Article not found: ${articleSlug}`);
+    }
 
     const cleanBody = stripHtml(article.body);
+    const articleUrl = `${CONFIG.apiBase}/articles/${article.slug}`;
 
-    return `# ${article.title}\n\nArticle ID: ${article.id}\nURL: ${article.html_url}\n\n${cleanBody}`;
+    return `# ${article.title}\n\nArticle ID: ${article.id}\nSlug: ${article.slug}\nURL: ${articleUrl}\n\n${cleanBody}`;
   } catch (error) {
     throw new Error(`Failed to fetch article: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-// List all categories and sections for Engage Victoria Help Center
-async function listCategories(): Promise<string> {
+// List all articles (replaces list_categories)
+async function listArticles(): Promise<string> {
   try {
-    const data = await zendeskApiRequest(`/help_center/${CONFIG.locale}/categories.json`);
-    const categories: ZendeskCategory[] = data.categories;
+    const data: ApiResponse = await apiRequest('/articles');
+    const articles: Article[] = data.data;
 
-    if (categories.length === 0) {
-      return "No categories found in the Engage Victoria knowledge base.";
+    if (!articles || articles.length === 0) {
+      return `No articles found in the ${CONFIG.siteName}.`;
     }
 
-    let output = "# Engage Victoria Knowledge Categories\n\n";
+    let output = `# ${CONFIG.siteName} - Available Articles\n\n`;
+    output += `Found ${articles.length} article(s):\n\n`;
 
-    for (const category of categories) {
-      output += `## ${category.name}\n`;
-      if (category.description) {
-        output += `${stripHtml(category.description)}\n`;
+    for (const article of articles) {
+      output += `## ${article.title}\n`;
+      output += `Slug: ${article.slug}\n`;
+      if (article.summary) {
+        output += `Summary: ${stripHtml(article.summary).substring(0, 200)}...\n`;
       }
-      output += `URL: ${category.html_url}\n`;
-      output += `Category ID: ${category.id}\n\n`;
-
-      // Get sections for this category
-      try {
-        const sectionData = await zendeskApiRequest(`/help_center/${CONFIG.locale}/categories/${category.id}/sections.json`);
-        const sections: ZendeskSection[] = sectionData.sections;
-
-        if (sections.length > 0) {
-          output += "### Sections:\n";
-          for (const section of sections) {
-            output += `- **${section.name}**`;
-            if (section.description) {
-              output += ` - ${stripHtml(section.description)}`;
-            }
-            output += ` (Section ID: ${section.id})\n`;
-          }
-          output += "\n";
-        }
-      } catch (err) {
-        // Continue even if sections fail
-      }
+      output += `\n`;
     }
 
     return output;
   } catch (error) {
-    throw new Error(`Failed to list categories: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Failed to list articles: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-// Search for articles in Engage Victoria Help Center
+// Search for articles
 async function searchArticles(query: string): Promise<string> {
   try {
     const encodedQuery = encodeURIComponent(query);
-    const data = await zendeskApiRequest(`/help_center/articles/search.json?query=${encodedQuery}&locale=${CONFIG.locale}`);
-    const results: ZendeskArticle[] = data.results;
+    const data: ApiResponse = await apiRequest(`/articles?q=${encodedQuery}`);
+    const results: Article[] = data.data;
 
-    if (results.length === 0) {
-      return `No articles found for "${query}" in Engage Victoria knowledge base.`;
+    if (!results || results.length === 0) {
+      return `No articles found for "${query}" in ${CONFIG.siteName}.`;
     }
 
-    let output = `# Search Results for "${query}"\n\nFound ${results.length} article(s) in Engage Victoria:\n\n`;
+    let output = `# Search Results for "${query}"\n\nFound ${results.length} article(s) in ${CONFIG.siteName}:\n\n`;
 
     for (const article of results) {
-      const cleanBody = stripHtml(article.body).substring(0, 300);
       output += `## ${article.title}\n`;
-      output += `Article ID: ${article.id}\n`;
-      output += `URL: ${article.html_url}\n`;
-      output += `Preview: ${cleanBody}...\n\n`;
+      output += `Slug: ${article.slug}\n`;
+      output += `URL: ${CONFIG.apiBase}/articles/${article.slug}\n`;
+      if (article.summary) {
+        output += `Preview: ${stripHtml(article.summary).substring(0, 300)}...\n`;
+      }
+      output += `\n`;
     }
 
     return output;
@@ -203,7 +149,7 @@ async function searchArticles(query: string): Promise<string> {
 const server = new Server(
   {
     name: "engage-victoria-knowledge",
-    version: "1.0.0",
+    version: "2.0.0",
   },
   {
     capabilities: {
@@ -215,8 +161,8 @@ const server = new Server(
 // Define available tools
 const tools: Tool[] = [
   {
-    name: "list_categories",
-    description: "List all available categories and sections in Engage Victoria Knowledge Base. Use this to discover what topics and help articles are available.",
+    name: "list_articles",
+    description: `List all available articles in ${CONFIG.siteName}. Use this to discover what help articles are available.`,
     inputSchema: {
       type: "object",
       properties: {},
@@ -224,21 +170,21 @@ const tools: Tool[] = [
   },
   {
     name: "fetch_article",
-    description: "Fetch and return the full content of a specific article by its ID from Engage Victoria Knowledge Base. Use this to get the complete, up-to-date content of an article.",
+    description: `Fetch and return the full content of a specific article by its slug from ${CONFIG.siteName}. Use this to get the complete, up-to-date content of an article.`,
     inputSchema: {
       type: "object",
       properties: {
-        article_id: {
+        article_slug: {
           type: "string",
-          description: "The Zendesk article ID (can be found in the article URL or from search results)",
+          description: "The article slug (e.g., '9175641395215-Settings' - can be found in the article URL or from search results)",
         },
       },
-      required: ["article_id"],
+      required: ["article_slug"],
     },
   },
   {
     name: "search_content",
-    description: "Search for articles in Engage Victoria Knowledge Base. Returns matching articles with previews and IDs.",
+    description: `Search for articles in ${CONFIG.siteName}. Returns matching articles with previews and slugs.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -262,25 +208,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
-    if (name === "list_categories") {
-      const categories = await listCategories();
+    if (name === "list_articles" || name === "list_categories") {
+      const articles = await listArticles();
 
       return {
         content: [
           {
             type: "text",
-            text: categories,
+            text: articles,
           },
         ],
       };
     }
 
     if (name === "fetch_article") {
-      if (!args || typeof args !== 'object' || !('article_id' in args)) {
-        throw new Error("Missing required parameter: article_id");
+      if (!args || typeof args !== 'object' || !('article_slug' in args)) {
+        throw new Error("Missing required parameter: article_slug");
       }
-      const { article_id } = args as unknown as FetchArticleArgs;
-      const content = await fetchArticle(article_id);
+      const { article_slug } = args as unknown as FetchArticleArgs;
+      const content = await fetchArticle(article_slug);
 
       return {
         content: [
@@ -327,7 +273,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`${CONFIG.siteName} MCP Server running on stdio`);
+  console.error(`${CONFIG.siteName} MCP Server running on stdio (API: ${CONFIG.apiBase})`);
 }
 
 main().catch((error) => {

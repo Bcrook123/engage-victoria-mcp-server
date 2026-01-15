@@ -1,16 +1,10 @@
-version: '3.8'
-
 services:
   engage-victoria-mcp:
     build: .
     container_name: engage-victoria-mcp
     restart: unless-stopped
     environment:
-      - DOTENV_CONFIG_QUIET=true
-      - ZENDESK_SUBDOMAIN=engagevic
-      - ZENDESK_EMAIL=${ZENDESK_EMAIL}
-      - ZENDESK_API_TOKEN=${ZENDESK_API_TOKEN}
-      - ZENDESK_LOCALE=en-au
-      - ZENDESK_SITE_NAME=Engage Victoria Knowledge
+      - KB_API_URL=https://ev-kb.doghouse.cloud
+      - KB_SITE_NAME=Engage Victoria Knowledge
     stdin_open: true
     tty: true
